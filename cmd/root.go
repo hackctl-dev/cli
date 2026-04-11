@@ -1,6 +1,11 @@
 package cmd
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+
+	"github.com/hackctl/hackctl/cli/internal/buildinfo"
+	"github.com/spf13/cobra"
+)
 
 const usageTemplate = `Usage:{{if .Runnable}}
   {{.UseLine}}{{if .HasAvailableSubCommands}} [command]{{end}}{{else if .HasAvailableSubCommands}}
@@ -32,6 +37,16 @@ var rootCmd = &cobra.Command{
 	Short: "Launch hackathon projects faster.",
 	Long:  "Launch hackathon projects faster.",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		showVersion, err := cmd.Flags().GetBool("version")
+		if err != nil {
+			return err
+		}
+
+		if showVersion {
+			fmt.Println(buildinfo.Summary())
+			return nil
+		}
+
 		return cmd.Help()
 	},
 	SilenceUsage:  true,
@@ -41,6 +56,7 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	rootCmd.SetUsageTemplate(usageTemplate)
+	rootCmd.Flags().BoolP("version", "v", false, "Print version information")
 }
 
 func Execute() error {
