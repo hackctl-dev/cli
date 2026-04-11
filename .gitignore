@@ -1,0 +1,21 @@
+# Build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+
+# Runtime state
+.hackctl/
+
+# Logs
+*.log
+
+# Editor/OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
