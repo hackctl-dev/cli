@@ -9,46 +9,48 @@ import (
 	"github.com/hackctl/hackctl/cli/internal/config"
 )
 
-func TestEnsureGitignoreEntryCreatesFile(t *testing.T) {
-	dir := t.TempDir()
+func TestCopyDirectorySkipsSecretsAndGeneratedFiles(t *testing.T) {
+	sourceDir := t.TempDir()
+	destinationDir := t.TempDir()
 
-	if err := ensureGitignoreEntry(dir, ".hackctl/"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err := os.WriteFile(filepath.Join(sourceDir, ".env"), []byte("SECRET=1\n"), 0o644); err != nil {
+		t.Fatalf("could not write .env: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, ".env.example"), []byte("SECRET=\n"), 0o644); err != nil {
+		t.Fatalf("could not write .env.example: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, ".DS_Store"), []byte("junk"), 0o644); err != nil {
+		t.Fatalf("could not write .DS_Store: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(sourceDir, "frontend", "node_modules"), 0o755); err != nil {
+		t.Fatalf("could not create node_modules: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "frontend", "node_modules", "pkg.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("could not write node_modules file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "frontend", "app.js"), []byte("console.log('ok')\n"), 0o644); err != nil {
+		t.Fatalf("could not write app file: %v", err)
 	}
 
-	body, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
-	if err != nil {
-		t.Fatalf("could not read .gitignore: %v", err)
+	if err := copyDirectory(sourceDir, destinationDir); err != nil {
+		t.Fatalf("copyDirectory failed: %v", err)
 	}
 
-	if string(body) != ".hackctl/\n" {
-		t.Fatalf("unexpected .gitignore content: %q", string(body))
+	if _, err := os.Stat(filepath.Join(destinationDir, ".env")); err == nil {
+		t.Fatalf("expected .env to be excluded")
 	}
-}
-
-func TestEnsureGitignoreEntryAppendsWithoutDuplicates(t *testing.T) {
-	dir := t.TempDir()
-	gitignorePath := filepath.Join(dir, ".gitignore")
-
-	if err := os.WriteFile(gitignorePath, []byte("backend/.env\n"), 0o644); err != nil {
-		t.Fatalf("could not write seed .gitignore: %v", err)
+	if _, err := os.Stat(filepath.Join(destinationDir, ".DS_Store")); err == nil {
+		t.Fatalf("expected .DS_Store to be excluded")
+	}
+	if _, err := os.Stat(filepath.Join(destinationDir, "frontend", "node_modules")); err == nil {
+		t.Fatalf("expected node_modules to be excluded")
 	}
 
-	if err := ensureGitignoreEntry(dir, ".hackctl/"); err != nil {
-		t.Fatalf("unexpected error on first write: %v", err)
+	if _, err := os.Stat(filepath.Join(destinationDir, ".env.example")); err != nil {
+		t.Fatalf("expected .env.example to be copied: %v", err)
 	}
-	if err := ensureGitignoreEntry(dir, ".hackctl/"); err != nil {
-		t.Fatalf("unexpected error on second write: %v", err)
-	}
-
-	body, err := os.ReadFile(gitignorePath)
-	if err != nil {
-		t.Fatalf("could not read .gitignore: %v", err)
-	}
-
-	expected := "backend/.env\n.hackctl/\n"
-	if string(body) != expected {
-		t.Fatalf("unexpected .gitignore content: %q", string(body))
+	if _, err := os.Stat(filepath.Join(destinationDir, "frontend", "app.js")); err != nil {
+		t.Fatalf("expected app file to be copied: %v", err)
 	}
 }
 

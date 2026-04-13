@@ -15,6 +15,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var skippedTemplateDirs = map[string]struct{}{
+	".git":         {},
+	".hackctl":     {},
+	"node_modules": {},
+}
+
 var (
 	createTemplate string
 )
@@ -53,12 +59,6 @@ var createCmd = &cobra.Command{
 			stepID = addStep("Downloading template")
 			if err := cloneTemplate(source, targetPath); err != nil {
 				return err
-			}
-			completeStep(stepID)
-
-			stepID = addStep("Updating ignore rules")
-			if err := ensureGitignoreEntry(targetPath, ".hackctl/"); err != nil {
-				return errors.New("could not update .gitignore")
 			}
 			completeStep(stepID)
 
@@ -282,39 +282,6 @@ func installDependencies(target dependencyTarget) error {
 	return nil
 }
 
-func ensureGitignoreEntry(projectPath string, entry string) error {
-	gitignorePath := filepath.Join(projectPath, ".gitignore")
-	body, err := os.ReadFile(gitignorePath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return os.WriteFile(gitignorePath, []byte(entry+"\n"), 0o644)
-		}
-		return err
-	}
-
-	content := string(body)
-	if hasGitignoreEntry(content, entry) {
-		return nil
-	}
-
-	if !strings.HasSuffix(content, "\n") {
-		content += "\n"
-	}
-	content += entry + "\n"
-
-	return os.WriteFile(gitignorePath, []byte(content), 0o644)
-}
-
-func hasGitignoreEntry(content string, entry string) bool {
-	for _, line := range strings.Split(content, "\n") {
-		if strings.TrimSpace(line) == entry {
-			return true
-		}
-	}
-
-	return false
-}
-
 func copyDirectory(src string, dst string) error {
 	if err := os.MkdirAll(dst, 0o755); err != nil {
 		return err
@@ -334,8 +301,11 @@ func copyDirectory(src string, dst string) error {
 			return nil
 		}
 
-		if d.IsDir() && d.Name() == ".git" {
-			return filepath.SkipDir
+		if shouldSkipTemplateEntry(d) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 
 		targetPath := filepath.Join(dst, relPath)
@@ -367,4 +337,30 @@ func copyDirectory(src string, dst string) error {
 
 		return nil
 	})
+}
+
+func shouldSkipTemplateEntry(entry os.DirEntry) bool {
+	name := strings.ToLower(strings.TrimSpace(entry.Name()))
+	if name == "" {
+		return false
+	}
+
+	if entry.IsDir() {
+		_, shouldSkip := skippedTemplateDirs[name]
+		return shouldSkip
+	}
+
+	if name == ".ds_store" || name == "thumbs.db" {
+		return true
+	}
+
+	if strings.HasPrefix(name, ".env") {
+		return !isExampleEnvFile(name)
+	}
+
+	return false
+}
+
+func isExampleEnvFile(name string) bool {
+	return strings.HasSuffix(name, ".env.example") || strings.HasSuffix(name, ".env.sample")
 }
