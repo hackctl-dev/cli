@@ -56,13 +56,14 @@ var shareCmd = &cobra.Command{
 		var publicURL string
 		state := config.RuntimeState{}
 		stateLoaded := false
+		tunnelOutput := newLineTail(20)
 
 		if err := output.RunSteps("Sharing project", func(addStep func(string) int, completeStep func(int)) error {
 			stepID := addStep("Preparing tunnel client")
 			var resolveErr error
 			cloudflaredPath, resolveErr = resolveCloudflaredBinary()
 			if resolveErr != nil {
-				return errors.New("could not prepare cloudflared")
+				return withDetail("could not prepare cloudflared", resolveErr.Error())
 			}
 			completeStep(stepID)
 
@@ -71,32 +72,32 @@ var shareCmd = &cobra.Command{
 
 			stdoutPipe, err := tunnelCmd.StdoutPipe()
 			if err != nil {
-				return errors.New("could not start tunnel client")
+				return withDetail("could not start tunnel client", err.Error())
 			}
 			stderrPipe, err := tunnelCmd.StderrPipe()
 			if err != nil {
-				return errors.New("could not start tunnel client")
+				return withDetail("could not start tunnel client", err.Error())
 			}
 
 			if err := tunnelCmd.Start(); err != nil {
-				return errors.New("could not start cloudflare quick tunnel")
+				return withDetail("could not start cloudflare quick tunnel", err.Error())
 			}
 
 			state, err = config.LoadRuntimeState(rootPath)
 			if err != nil {
-				return errors.New("could not prepare runtime state")
+				return withDetail("could not prepare runtime state", err.Error())
 			}
 			stateLoaded = true
 			state.Mode = "local"
 			state.TunnelPID = tunnelCmd.Process.Pid
 			state.TunnelProvider = "cloudflare"
 			if err := config.SaveRuntimeState(rootPath, state); err != nil {
-				return errors.New("could not write runtime state")
+				return withDetail("could not write runtime state", err.Error())
 			}
 
 			urlCh := make(chan string, 1)
-			go scanTunnelOutput(stdoutPipe, urlCh)
-			go scanTunnelOutput(stderrPipe, urlCh)
+			go scanTunnelOutput(stdoutPipe, urlCh, tunnelOutput)
+			go scanTunnelOutput(stderrPipe, urlCh, tunnelOutput)
 
 			waitCh = make(chan error, 1)
 			go func() {
@@ -106,14 +107,18 @@ var shareCmd = &cobra.Command{
 			stepID = addStep("Opening public URL")
 			url, waitErr := waitForPublicURL(urlCh, waitCh)
 			if waitErr != nil {
-				return errors.New("could not establish a public URL")
+				detail := tunnelOutput.LastLine()
+				if detail == "" {
+					detail = waitErr.Error()
+				}
+				return withDetail("could not establish a public URL", detail)
 			}
 			publicURL = url
 			completeStep(stepID)
 
 			state.LiveURL = publicURL
 			if err := config.SaveRuntimeState(rootPath, state); err != nil {
-				return errors.New("could not write runtime state")
+				return withDetail("could not write runtime state", err.Error())
 			}
 
 			return nil
@@ -138,19 +143,30 @@ var shareCmd = &cobra.Command{
 		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 		defer signal.Stop(sigCh)
 
+		unexpectedStop := false
+		unexpectedDetail := ""
+
 		select {
 		case <-sigCh:
 			_ = stopProcess(tunnelCmd)
 			<-waitCh
-		case <-waitCh:
-			// tunnel stopped unexpectedly
+		case err := <-waitCh:
+			unexpectedStop = true
+			unexpectedDetail = conciseError(err)
+			if unexpectedDetail == "" {
+				unexpectedDetail = tunnelOutput.LastLine()
+			}
 		}
 
 		state.LiveURL = ""
 		state.TunnelProvider = ""
 		state.TunnelPID = 0
 		if err := config.SaveRuntimeState(rootPath, state); err != nil {
-			return errors.New("could not write runtime state")
+			return withDetail("could not write runtime state", err.Error())
+		}
+
+		if unexpectedStop {
+			return withDetail("Tunnel stopped unexpectedly", unexpectedDetail)
 		}
 
 		fmt.Print("\r\033[2K")
@@ -317,10 +333,13 @@ func cloudflaredDownloadURL() (string, error) {
 	return "", fmt.Errorf("unsupported platform %s/%s", runtime.GOOS, runtime.GOARCH)
 }
 
-func scanTunnelOutput(reader io.Reader, urlCh chan<- string) {
+func scanTunnelOutput(reader io.Reader, urlCh chan<- string, tail *lineTail) {
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
 		line := scanner.Text()
+		if tail != nil {
+			_, _ = tail.Write([]byte(line + "\n"))
+		}
 		if match := quickTunnelURL.FindString(line); match != "" {
 			select {
 			case urlCh <- match:

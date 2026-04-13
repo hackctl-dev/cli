@@ -45,14 +45,20 @@ var createCmd = &cobra.Command{
 			if err := ensureWritableTarget(targetPath, createName); err != nil {
 				return err
 			}
-			if _, err := exec.LookPath("git"); err != nil {
-				return errors.New("git is required")
+			if err := ensureDependencies(depGit, depNode, depNPM); err != nil {
+				return err
 			}
 			completeStep(stepID)
 
 			stepID = addStep("Downloading template")
 			if err := cloneTemplate(source, targetPath); err != nil {
 				return err
+			}
+			completeStep(stepID)
+
+			stepID = addStep("Updating ignore rules")
+			if err := ensureGitignoreEntry(targetPath, ".hackctl/"); err != nil {
+				return errors.New("could not update .gitignore")
 			}
 			completeStep(stepID)
 
@@ -169,11 +175,9 @@ func cloneTemplate(source templates.TemplateSource, targetPath string) error {
 		args = append(args, source.RepoURL, targetPath)
 
 		cloneCmd := exec.Command("git", args...)
-		cloneCmd.Stdout = io.Discard
-		cloneCmd.Stderr = io.Discard
-
-		if err := cloneCmd.Run(); err != nil {
-			return errors.New("template download failed")
+		output, err := cloneCmd.CombinedOutput()
+		if err != nil {
+			return commandError("template download failed", err, output)
 		}
 
 		return nil
@@ -192,11 +196,9 @@ func cloneTemplate(source templates.TemplateSource, targetPath string) error {
 	args = append(args, source.RepoURL, tempDir)
 
 	cloneCmd := exec.Command("git", args...)
-	cloneCmd.Stdout = io.Discard
-	cloneCmd.Stderr = io.Discard
-
-	if err := cloneCmd.Run(); err != nil {
-		return errors.New("template download failed")
+	output, err := cloneCmd.CombinedOutput()
+	if err != nil {
+		return commandError("template download failed", err, output)
 	}
 
 	templatePath := filepath.Join(tempDir, filepath.FromSlash(source.Subdir))
@@ -222,26 +224,28 @@ type dependencyTarget struct {
 
 func dependencyInstallTargets(targetPath string) ([]dependencyTarget, error) {
 	cfg, err := config.LoadProjectConfig(targetPath)
-	if err == nil {
-		targets := make([]dependencyTarget, 0, len(cfg.Services))
-		for _, service := range cfg.Services {
-			servicePath := filepath.Join(targetPath, filepath.FromSlash(service.CWD))
-			pkgJSON := filepath.Join(servicePath, "package.json")
-			if _, statErr := os.Stat(pkgJSON); statErr != nil {
-				continue
-			}
+	if err != nil {
+		return nil, err
+	}
 
-			serviceName := strings.TrimSpace(service.Name)
-			if serviceName == "" {
-				serviceName = filepath.Base(servicePath)
-			}
-
-			targets = append(targets, dependencyTarget{name: serviceName, path: servicePath})
+	targets := make([]dependencyTarget, 0, len(cfg.Services))
+	for _, service := range cfg.Services {
+		servicePath := filepath.Join(targetPath, filepath.FromSlash(service.CWD))
+		pkgJSON := filepath.Join(servicePath, "package.json")
+		if _, statErr := os.Stat(pkgJSON); statErr != nil {
+			continue
 		}
 
-		if len(targets) > 0 {
-			return targets, nil
+		serviceName := strings.TrimSpace(service.Name)
+		if serviceName == "" {
+			serviceName = filepath.Base(servicePath)
 		}
+
+		targets = append(targets, dependencyTarget{name: serviceName, path: servicePath})
+	}
+
+	if len(targets) > 0 {
+		return targets, nil
 	}
 
 	entries, err := os.ReadDir(targetPath)
@@ -249,7 +253,7 @@ func dependencyInstallTargets(targetPath string) ([]dependencyTarget, error) {
 		return nil, err
 	}
 
-	targets := make([]dependencyTarget, 0, len(entries))
+	fallbackTargets := make([]dependencyTarget, 0, len(entries))
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -261,23 +265,54 @@ func dependencyInstallTargets(targetPath string) ([]dependencyTarget, error) {
 			continue
 		}
 
-		targets = append(targets, dependencyTarget{name: entry.Name(), path: servicePath})
+		fallbackTargets = append(fallbackTargets, dependencyTarget{name: entry.Name(), path: servicePath})
 	}
 
-	return targets, nil
+	return fallbackTargets, nil
 }
 
 func installDependencies(target dependencyTarget) error {
 	installCmd := exec.Command("npm", "install", "--silent", "--no-audit", "--no-fund")
 	installCmd.Dir = target.path
-	installCmd.Stdout = io.Discard
-	installCmd.Stderr = io.Discard
-
-	if err := installCmd.Run(); err != nil {
-		return fmt.Errorf("dependency install failed for %s", target.name)
+	output, err := installCmd.CombinedOutput()
+	if err != nil {
+		return commandError(fmt.Sprintf("dependency install failed for %s", target.name), err, output)
 	}
 
 	return nil
+}
+
+func ensureGitignoreEntry(projectPath string, entry string) error {
+	gitignorePath := filepath.Join(projectPath, ".gitignore")
+	body, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return os.WriteFile(gitignorePath, []byte(entry+"\n"), 0o644)
+		}
+		return err
+	}
+
+	content := string(body)
+	if hasGitignoreEntry(content, entry) {
+		return nil
+	}
+
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	content += entry + "\n"
+
+	return os.WriteFile(gitignorePath, []byte(content), 0o644)
+}
+
+func hasGitignoreEntry(content string, entry string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		if strings.TrimSpace(line) == entry {
+			return true
+		}
+	}
+
+	return false
 }
 
 func copyDirectory(src string, dst string) error {
