@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/hackctl/hackctl/cli/internal/templates"
 )
 
 const ProjectConfigFilename = "hackctl.config.json"
@@ -54,6 +56,8 @@ func LoadProjectConfig(rootPath string) (ProjectConfig, error) {
 }
 
 func validateProjectConfig(rootPath string, cfg ProjectConfig) error {
+	officialTemplate := templates.IsOfficial(cfg.Template)
+
 	if len(cfg.Services) == 0 {
 		return errors.New("config has no services")
 	}
@@ -90,6 +94,18 @@ func validateProjectConfig(rootPath string, cfg ProjectConfig) error {
 
 		if svc.Port <= 0 || svc.Port > 65535 {
 			return fmt.Errorf("service %s: port invalid", name)
+		}
+
+		if officialTemplate {
+			if !isNPMRunCommand(svc.Run) {
+				return fmt.Errorf("service %s: run must use npm run", name)
+			}
+
+			packageJSONPath := filepath.Join(servicePath, "package.json")
+			info, err := os.Stat(packageJSONPath)
+			if err != nil || info.IsDir() {
+				return fmt.Errorf("service %s: package.json missing", name)
+			}
 		}
 
 		if strings.TrimSpace(svc.EnvFile) != "" {
@@ -130,4 +146,17 @@ func resolveProjectPath(rootPath string, value string) (string, error) {
 	}
 
 	return resolved, nil
+}
+
+func isNPMRunCommand(command string) bool {
+	fields := strings.Fields(strings.TrimSpace(command))
+	if len(fields) < 3 {
+		return false
+	}
+
+	if !strings.EqualFold(fields[0], "npm") && !strings.EqualFold(fields[0], "npm.cmd") {
+		return false
+	}
+
+	return strings.EqualFold(fields[1], "run")
 }

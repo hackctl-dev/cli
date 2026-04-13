@@ -23,7 +23,7 @@ var registry = map[string]TemplateSource{
 }
 
 func Resolve(templateID string) (TemplateSource, error) {
-	templateID = strings.ToLower(strings.TrimSpace(templateID))
+	templateID = normalizedTemplateID(templateID)
 
 	source, ok := registry[templateID]
 	if ok {
@@ -31,6 +31,11 @@ func Resolve(templateID string) (TemplateSource, error) {
 	}
 
 	return TemplateSource{}, fmt.Errorf("Unsupporteed template %s", templateID)
+}
+
+func IsOfficial(templateID string) bool {
+	_, ok := registry[normalizedTemplateID(templateID)]
+	return ok
 }
 
 func SupportedIDs() []string {
@@ -41,4 +46,8 @@ func SupportedIDs() []string {
 
 	sort.Strings(ids)
 	return ids
+}
+
+func normalizedTemplateID(templateID string) string {
+	return strings.ToLower(strings.TrimSpace(templateID))
 }
