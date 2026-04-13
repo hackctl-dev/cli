@@ -8,6 +8,21 @@ hackctl start
 hackctl share
 ```
 
+## Quickstart
+
+```bash
+hackctl create --template mern my-app
+cd my-app
+hackctl start
+hackctl share
+```
+
+Notes:
+
+- Run `hackctl start` and `hackctl share` from the project root (where `hackctl.config.json` exists).
+- Press `Ctrl+C` to stop `start` services or stop an active `share` tunnel.
+- If a required dependency is missing, hackctl prints a short install link.
+
 ## Current Commands
 
 ### `hackctl create`
@@ -26,7 +41,8 @@ Current behavior:
 - clones from `https://github.com/hackctl-dev/templates.git`
 - copies the `mern/` subdirectory into the target path
 - validates `hackctl.config.json` service and share settings before continuing
-- ensures generated `.gitignore` includes `.hackctl/`
+- enforces npm-based run commands for official templates
+- expects templates to ignore `.hackctl/` in `.gitignore`
 - installs Node dependencies for detected services
 - fails if the target directory already exists
 
