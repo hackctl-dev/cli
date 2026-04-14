@@ -36,10 +36,10 @@ hackctl create -t mern .
 
 Current behavior:
 
-- supports `mern` only
+- supports official templates: `mern`, `pern`, `next-supabase`, `sveltekit-supabase`, `nuxt-supabase`
 - requires `git`, `node >= 20`, and `npm >= 10`
 - clones from `https://github.com/hackctl-dev/templates.git`
-- copies the `mern/` subdirectory into the target path
+- copies the selected template subdirectory into the target path
 - validates `hackctl.config.json` service and share settings before continuing
 - enforces npm-based run commands for official templates
 - expects templates to ignore `.hackctl/` in `.gitignore`
