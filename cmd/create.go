@@ -83,9 +83,9 @@ var createCmd = &cobra.Command{
 		fmt.Println("Project successfully created")
 		fmt.Println()
 		if createName == "." {
-			fmt.Println(output.Footer("Next: hackctl start"))
+			fmt.Println(output.Footer("Next: configure this project using README.md"))
 		} else {
-			fmt.Println(output.Footer(fmt.Sprintf("Next: cd %s && hackctl start", createName)))
+			fmt.Println(output.Footer(fmt.Sprintf("Next: cd %s and configure using README.md", createName)))
 		}
 
 		return nil

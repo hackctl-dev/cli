@@ -20,6 +20,30 @@ var registry = map[string]TemplateSource{
 		Ref:     "main",
 		Subdir:  "mern",
 	},
+	"pern": {
+		ID:      "pern",
+		RepoURL: "https://github.com/hackctl-dev/templates.git",
+		Ref:     "main",
+		Subdir:  "pern",
+	},
+	"next-supabase": {
+		ID:      "next-supabase",
+		RepoURL: "https://github.com/hackctl-dev/templates.git",
+		Ref:     "main",
+		Subdir:  "next-supabase",
+	},
+	"sveltekit-supabase": {
+		ID:      "sveltekit-supabase",
+		RepoURL: "https://github.com/hackctl-dev/templates.git",
+		Ref:     "main",
+		Subdir:  "sveltekit-supabase",
+	},
+	"nuxt-supabase": {
+		ID:      "nuxt-supabase",
+		RepoURL: "https://github.com/hackctl-dev/templates.git",
+		Ref:     "main",
+		Subdir:  "nuxt-supabase",
+	},
 }
 
 func Resolve(templateID string) (TemplateSource, error) {
@@ -30,7 +54,7 @@ func Resolve(templateID string) (TemplateSource, error) {
 		return source, nil
 	}
 
-	return TemplateSource{}, fmt.Errorf("Unsupporteed template %s", templateID)
+	return TemplateSource{}, fmt.Errorf("unsupported template %s", templateID)
 }
 
 func IsOfficial(templateID string) bool {
