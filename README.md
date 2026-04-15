@@ -3,14 +3,52 @@
 `hackctl` is the Go CLI for the core hackctl workflow:
 
 ```bash
+hackctl create
 hackctl create --template mern my-app
 hackctl start
 hackctl share
 ```
 
+## Install
+
+The hosted installers download the latest GitHub release and verify checksums before installing.
+
+Supported release platforms:
+
+- Windows x64
+- macOS Intel
+- macOS Apple Silicon
+- Linux x64
+- Linux ARM64
+
+Windows x64:
+
+```powershell
+irm https://hackctl.dev/install.ps1 | iex
+```
+
+macOS Intel and Apple Silicon:
+
+```bash
+curl -fsSL https://hackctl.dev/install.sh | sh
+```
+
+Linux x64 and ARM64:
+
+```bash
+curl -fsSL https://hackctl.dev/install.sh | sh
+```
+
+Verify:
+
+```bash
+hackctl --version
+```
+
 ## Quickstart
 
 ```bash
+hackctl create
 hackctl create --template mern my-app
 cd my-app
 hackctl start
@@ -30,12 +68,14 @@ Notes:
 Scaffolds a project from an official template.
 
 ```bash
+hackctl create
 hackctl create --template mern my-app
 hackctl create -t mern .
 ```
 
 Current behavior:
 
+- running `hackctl create` with no args opens an interactive prompt for template and path
 - supports official templates: `mern`, `pern`, `next-supabase`, `sveltekit-supabase`, `nuxt-supabase`
 - requires `git`, `node >= 20`, and `npm >= 10`
 - clones from `https://github.com/hackctl-dev/templates.git`
