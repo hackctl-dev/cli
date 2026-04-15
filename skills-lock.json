@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "skills": {
+    "github-actions-docs": {
+      "source": "xixu-me/skills",
+      "sourceType": "github",
+      "computedHash": "ead3fa2aff18e829c468dee593e1dc897aa95dc7a07d9ff8ff9f30c296b19af8"
+    },
+    "github-actions-templates": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "computedHash": "3dcb8b0c64ef38bb0fb03e4c9a39084927a55fd229e91fa48af0673389389fe8"
+    },
+    "golang-cli-cobra-viper": {
+      "source": "bobmatnyc/claude-mpm-skills",
+      "sourceType": "github",
+      "computedHash": "ddc8748e5c17711adcc68cf28decbba3855275cc3e910a0b74f77a6250302220"
+    },
+    "golang-testing": {
+      "source": "affaan-m/everything-claude-code",
+      "sourceType": "github",
+      "computedHash": "1f263c92e24067adcf574000dd078d3bd0baf9a6568becb2510df1af31c906ef"
+    }
+  }
+}
