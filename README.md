@@ -114,4 +114,4 @@ go test ./...
 
 ## Status
 
-This repo implements the current MVP flow. Planned roadmap items like deploy, status, destroy, `--vibe`, and `--skills` are not shipped yet.
+This repo implements the current MVP flow. Planned roadmap items like deploy, status, and destroy are not shipped yet.
