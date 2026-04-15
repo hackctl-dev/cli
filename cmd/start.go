@@ -68,10 +68,13 @@ type startFailedMsg struct {
 
 type startModel struct {
 	spinner     spinner.Model
+	startup     output.StartupAnimation
 	rows        []startServiceRow
 	indexByName map[string]int
 	footer      string
 	stopping    bool
+	done        bool
+	result      error
 	cancel      context.CancelFunc
 }
 
@@ -79,14 +82,7 @@ var startCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start project services",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Print(output.ASCIIBanner())
-
 		rootPath, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-
-		projectConfig, err := config.LoadProjectConfig(rootPath)
 		if err != nil {
 			return err
 		}
@@ -94,14 +90,21 @@ var startCmd = &cobra.Command{
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		model := newStartModel(projectConfig.Services, cancel)
+		model := newStartModel(cancel)
 		program := tea.NewProgram(model, tea.WithoutSignalHandler())
 
-		go runStartWorkflow(ctx, rootPath, projectConfig, program.Send)
+		go runStartWorkflow(ctx, rootPath, program.Send)
 
-		if _, err := program.Run(); err != nil {
+		finalModel, err := program.Run()
+		if err != nil {
 			return err
 		}
+
+		final := finalModel.(startModel)
+		if final.result != nil {
+			return final.result
+		}
+
 		return nil
 	},
 }
@@ -110,36 +113,29 @@ func init() {
 	rootCmd.AddCommand(startCmd)
 }
 
-func newStartModel(services []config.ServiceConfig, cancel context.CancelFunc) startModel {
-	rows := make([]startServiceRow, 0, len(services))
-	indexByName := make(map[string]int, len(services))
-
-	for i, svc := range services {
-		rows = append(rows, startServiceRow{
-			Name:   svc.Name,
-			Status: statusPending,
-			Detail: "waiting",
-		})
-		indexByName[svc.Name] = i
-	}
-
+func newStartModel(cancel context.CancelFunc) startModel {
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 
 	return startModel{
 		spinner:     spin,
-		rows:        rows,
-		indexByName: indexByName,
+		startup:     output.NewStartupAnimation(),
+		rows:        []startServiceRow{},
+		indexByName: make(map[string]int),
 		footer:      "Starting services...",
 		cancel:      cancel,
 	}
 }
 
 func (m startModel) Init() tea.Cmd {
-	return m.spinner.Tick
+	return tea.Batch(m.spinner.Tick, m.startup.Init())
 }
 
 func (m startModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case output.StartupAnimationTickMsg:
+		var cmd tea.Cmd
+		m.startup, cmd = m.startup.Update(msg)
+		return m, cmd
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -149,6 +145,13 @@ func (m startModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if ok {
 			m.rows[idx].Status = msg.Status
 			m.rows[idx].Detail = msg.Detail
+		} else {
+			m.indexByName[msg.Name] = len(m.rows)
+			m.rows = append(m.rows, startServiceRow{
+				Name:   msg.Name,
+				Status: msg.Status,
+				Detail: msg.Detail,
+			})
 		}
 		return m, nil
 	case startFooterMsg:
@@ -156,13 +159,15 @@ func (m startModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case startStoppedMsg:
 		m.footer = "Services stopped"
+		m.done = true
 		return m, tea.Quit
 	case startFailedMsg:
 		if msg.Message == "" {
-			m.footer = "Start failed"
+			m.result = errors.New("start failed")
 		} else {
-			m.footer = "Start failed: " + msg.Message
+			m.result = errors.New(msg.Message)
 		}
+		m.done = true
 		return m, tea.Quit
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" || msg.String() == "q" {
@@ -183,6 +188,16 @@ func (m startModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m startModel) View() string {
 	var builder strings.Builder
 
+	if m.startup.Visible() {
+		builder.WriteString("\n")
+		if m.done {
+			builder.WriteString(m.startup.ResolvedView())
+		} else {
+			builder.WriteString(m.startup.View())
+		}
+		builder.WriteString("\n\n")
+	}
+
 	for _, row := range m.rows {
 		line := m.rowIcon(row.Status) + " " + displayServiceName(row.Name)
 		if row.Detail != "" {
@@ -197,7 +212,16 @@ func (m startModel) View() string {
 		builder.WriteString("\n")
 	}
 
-	builder.WriteString("\n")
+	if m.result != nil {
+		if len(m.rows) > 0 {
+			builder.WriteString("\n")
+		}
+		return builder.String()
+	}
+
+	if len(m.rows) > 0 {
+		builder.WriteString("\n")
+	}
 	builder.WriteString(output.Footer(m.footer))
 	builder.WriteString("\n")
 
@@ -230,7 +254,13 @@ func (m startModel) rowIcon(status startServiceStatus) string {
 	}
 }
 
-func runStartWorkflow(ctx context.Context, rootPath string, projectConfig config.ProjectConfig, send func(msg tea.Msg)) {
+func runStartWorkflow(ctx context.Context, rootPath string, send func(msg tea.Msg)) {
+	projectConfig, err := config.LoadProjectConfig(rootPath)
+	if err != nil {
+		send(startFailedMsg{Message: err.Error()})
+		return
+	}
+
 	if err := ensureDependencies(depNode, depNPM); err != nil {
 		send(startFailedMsg{Message: err.Error()})
 		return

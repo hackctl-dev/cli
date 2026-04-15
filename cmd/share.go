@@ -29,26 +29,10 @@ var shareCmd = &cobra.Command{
 	Use:   "share",
 	Short: "Share a running project publicly",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Print(output.ASCIIBanner())
-
-		rootPath, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-
-		projectConfig, err := config.LoadProjectConfig(rootPath)
-		if err != nil {
-			return err
-		}
-
-		port, err := resolveSharePort(projectConfig)
-		if err != nil {
-			return err
-		}
-
-		if !isPortReachable(port, 1200*time.Millisecond) {
-			return fmt.Errorf("No services running on port %d", port)
-		}
+		var (
+			rootPath string
+			port     int
+		)
 
 		var cloudflaredPath string
 		var tunnelCmd *exec.Cmd
@@ -59,6 +43,26 @@ var shareCmd = &cobra.Command{
 		tunnelOutput := newLineTail(20)
 
 		if err := output.RunSteps("Sharing project", func(addStep func(string) int, completeStep func(int)) error {
+			var err error
+			rootPath, err = os.Getwd()
+			if err != nil {
+				return err
+			}
+
+			projectConfig, err := config.LoadProjectConfig(rootPath)
+			if err != nil {
+				return err
+			}
+
+			port, err = resolveSharePort(projectConfig)
+			if err != nil {
+				return err
+			}
+
+			if !isPortReachable(port, 1200*time.Millisecond) {
+				return fmt.Errorf("No services running on port %d", port)
+			}
+
 			stepID := addStep("Preparing tunnel client")
 			var resolveErr error
 			cloudflaredPath, resolveErr = resolveCloudflaredBinary()

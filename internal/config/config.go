@@ -38,7 +38,7 @@ func LoadProjectConfig(rootPath string) (ProjectConfig, error) {
 	body, err := os.ReadFile(configPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return ProjectConfig{}, fmt.Errorf("%s not found in %s", ProjectConfigFilename, rootPath)
+			return ProjectConfig{}, fmt.Errorf("%s not found", ProjectConfigFilename)
 		}
 		return ProjectConfig{}, err
 	}

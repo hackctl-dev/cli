@@ -21,22 +21,6 @@ var (
 	iconFooter   = "?"
 )
 
-var asciiArt = `██████╗ ██╗   ██╗██╗   ██╗███████╗
-██╔══██╗██║   ██║╚██╗ ██╔╝██╔════╝
-██████╔╝██║   ██║ ╚████╔╝ ███████╗
-██╔═══╝ ██║   ██║  ╚██╔╝  ╚════██║
-██║     ╚██████╔╝   ██║   ███████║
-╚═╝      ╚═════╝    ╚═╝   ╚══════╝`
-
-var asciiLines = []string{
-	"██╗  ██╗ █████╗  ██████╗██╗  ██╗ ██████╗████████╗██╗     ",
-	"██║  ██║██╔══██╗██╔════╝██║ ██╔╝██╔════╝╚══██╔══╝██║     ",
-	"███████║███████║██║     █████╔╝ ██║        ██║   ██║     ",
-	"██╔══██║██╔══██║██║     ██╔═██╗ ██║        ██║   ██║     ",
-	"██║  ██║██║  ██║╚██████╗██║  ██╗╚██████╗   ██║   ███████╗",
-	"╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝ ╚═════╝   ╚═╝   ╚══════╝",
-}
-
 func Command(name string) string {
 	return commandStyle.Render(name)
 }
@@ -87,13 +71,4 @@ func InfoIcon() string {
 
 func Section(title string) string {
 	return commandStyle.Render(title)
-}
-
-func ASCIIBanner() string {
-	bannerStyle := lipgloss.NewStyle()
-	var result string
-	for _, line := range asciiLines {
-		result += bannerStyle.Render(line) + "\n"
-	}
-	return "\n" + result + "\n"
 }

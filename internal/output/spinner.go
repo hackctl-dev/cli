@@ -104,6 +104,7 @@ type progressLine struct {
 
 type stepsModel struct {
 	spinner   spinner.Model
+	startup   StartupAnimation
 	title     string
 	progress  []progressLine
 	indexByID map[int]int
@@ -134,6 +135,7 @@ func RunSteps(title string, action func(addStep func(string) int, completeStep f
 
 	model := stepsModel{
 		spinner:   spinner.New(spinner.WithSpinner(spinner.Dot)),
+		startup:   NewStartupAnimation(),
 		title:     title,
 		indexByID: make(map[int]int),
 		events:    events,
@@ -149,11 +151,15 @@ func RunSteps(title string, action func(addStep func(string) int, completeStep f
 }
 
 func (m stepsModel) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, waitForProgressEvent(m.events))
+	return tea.Batch(m.spinner.Tick, waitForProgressEvent(m.events), m.startup.Init())
 }
 
 func (m stepsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case StartupAnimationTickMsg:
+		var cmd tea.Cmd
+		m.startup, cmd = m.startup.Update(msg)
+		return m, cmd
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -194,6 +200,16 @@ func (m stepsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m stepsModel) View() string {
 	var b strings.Builder
 
+	if m.startup.Visible() {
+		b.WriteString("\n")
+		if m.done {
+			b.WriteString(m.startup.ResolvedView())
+		} else {
+			b.WriteString(m.startup.View())
+		}
+		b.WriteString("\n\n")
+	}
+
 	if m.done {
 		if m.success {
 			b.WriteString(fmt.Sprintf("%s %s\n", OK(SuccessIcon()), m.title))
@@ -223,7 +239,9 @@ func (m stepsModel) View() string {
 
 		b.WriteString(fmt.Sprintf("%s\n", line))
 	}
-	b.WriteString("\n")
+	if len(m.progress) > 0 {
+		b.WriteString("\n")
+	}
 
 	return b.String()
 }

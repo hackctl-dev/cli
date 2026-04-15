@@ -32,22 +32,23 @@ var createCmd = &cobra.Command{
 	Example: "hackctl create --template mern .\n" +
 		"hackctl create --template mern my-app",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Print(output.ASCIIBanner())
-
 		createName := args[0]
-
-		source, err := templates.Resolve(createTemplate)
-		if err != nil {
-			return err
-		}
-
-		targetPath, err := resolveTargetPath(createName)
-		if err != nil {
-			return err
-		}
+		var (
+			source     templates.TemplateSource
+			targetPath string
+		)
 
 		if err := output.RunSteps("Creating project", func(addStep func(string) int, completeStep func(int)) error {
 			stepID := addStep("Preparing project directory")
+			var err error
+			source, err = templates.Resolve(createTemplate)
+			if err != nil {
+				return err
+			}
+			targetPath, err = resolveTargetPath(createName)
+			if err != nil {
+				return err
+			}
 			if err := ensureWritableTarget(targetPath, createName); err != nil {
 				return err
 			}
