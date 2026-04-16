@@ -99,7 +99,7 @@ Current behavior:
 - must be run inside a hackctl project
 - requires `node >= 20` and `npm >= 10`
 - installs missing dependencies when needed
-- starts all configured services
+- starts all configured services in parallel
 - waits for each service port to become reachable before marking it running
 - writes runtime state to `.hackctl/state.json`
 - shows a compact terminal UI instead of raw logs

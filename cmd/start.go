@@ -32,6 +32,17 @@ type serviceExit struct {
 	err  error
 }
 
+type serviceStartResult struct {
+	name      string
+	port      int
+	service   runningService
+	waitCh    <-chan error
+	err       error
+	reason    string
+	detail    string
+	cancelled bool
+}
+
 type startServiceStatus string
 
 const (
@@ -282,119 +293,124 @@ func runStartWorkflow(ctx context.Context, rootPath string, send func(msg tea.Ms
 		return
 	}
 
-	running := make([]runningService, 0, len(projectConfig.Services))
-	exitCh := make(chan serviceExit, len(projectConfig.Services))
+	startCtx, startCancel := context.WithCancel(context.Background())
+	defer startCancel()
 
+	serviceResults := make(chan serviceStartResult, len(projectConfig.Services))
 	for _, svc := range projectConfig.Services {
+		svc := svc
+		go func() {
+			serviceResults <- startService(startCtx, rootPath, svc, send)
+		}()
+	}
+
+	type startupFailure struct {
+		name    string
+		reason  string
+		detail  string
+		message string
+	}
+
+	var startupErr *startupFailure
+	running := make([]runningService, 0, len(projectConfig.Services))
+	runningByName := make(map[string]struct{}, len(projectConfig.Services))
+	readyWaiters := make(map[string]<-chan error, len(projectConfig.Services))
+
+	cancelled := false
+	ctxDone := ctx.Done()
+
+	for completed := 0; completed < len(projectConfig.Services); {
 		select {
-		case <-ctx.Done():
-			for _, rs := range running {
-				send(startServiceUpdateMsg{Name: rs.name, Status: statusStopping, Detail: "stopping"})
+		case <-ctxDone:
+			cancelled = true
+			startCancel()
+			ctxDone = nil
+		case result := <-serviceResults:
+			completed++
+
+			if ctx.Err() != nil && !cancelled {
+				cancelled = true
+				startCancel()
+				ctxDone = nil
 			}
-			gracefulStop(running)
-			markStopped(&state, running)
-			_ = config.SaveRuntimeState(rootPath, state)
-			send(startStoppedMsg{})
-			return
-		default:
-		}
 
-		svcDir := filepath.Join(rootPath, svc.CWD)
-		if _, err := os.Stat(svcDir); err != nil {
-			gracefulStop(running)
-			state.Services[svc.Name] = config.ServiceState{PID: 0, Status: "failed"}
-			markStopped(&state, running)
-			_ = config.SaveRuntimeState(rootPath, state)
-			send(startServiceUpdateMsg{Name: svc.Name, Status: statusFailed, Detail: "folder missing"})
-			send(startFailedMsg{Message: serviceFailureMessage(svc.Name, "folder missing", "")})
-			return
-		}
-
-		installed, err := installDependenciesIfNeeded(ctx, svcDir)
-		if err != nil {
-			gracefulStop(running)
-			state.Services[svc.Name] = config.ServiceState{PID: 0, Status: "failed"}
-			markStopped(&state, running)
-			_ = config.SaveRuntimeState(rootPath, state)
-			send(startServiceUpdateMsg{Name: svc.Name, Status: statusFailed, Detail: "install failed"})
-			send(startFailedMsg{Message: serviceFailureMessage(svc.Name, "install failed", conciseError(err))})
-			return
-		}
-		if installed {
-			send(startServiceUpdateMsg{Name: svc.Name, Status: statusInstalling, Detail: "dependencies installed"})
-		} else {
-			send(startServiceUpdateMsg{Name: svc.Name, Status: statusInstalling, Detail: "dependencies ready"})
-		}
-
-		send(startServiceUpdateMsg{Name: svc.Name, Status: statusStarting, Detail: "starting"})
-
-		serviceTail := newLineTail(10)
-		serviceCmd := serviceCommand(svc.Run)
-		serviceCmd.Dir = svcDir
-		serviceCmd.Stdout = serviceTail
-		serviceCmd.Stderr = serviceTail
-		serviceCmd.Env = os.Environ()
-
-		if svc.EnvFile != "" {
-			envPath := filepath.Join(rootPath, svc.EnvFile)
-			envMap, err := config.LoadEnvFile(envPath)
-			if err != nil {
-				gracefulStop(running)
-				state.Services[svc.Name] = config.ServiceState{PID: 0, Status: "failed"}
-				markStopped(&state, running)
-				_ = config.SaveRuntimeState(rootPath, state)
-				send(startServiceUpdateMsg{Name: svc.Name, Status: statusFailed, Detail: "env file invalid"})
-				send(startFailedMsg{Message: serviceFailureMessage(svc.Name, "env file invalid", conciseError(err))})
-				return
+			if result.service.cmd != nil {
+				if _, seen := runningByName[result.name]; !seen {
+					runningByName[result.name] = struct{}{}
+					running = append(running, result.service)
+				}
 			}
-			serviceCmd.Env = append(serviceCmd.Env, envPairs(envMap)...)
-		}
 
-		if err := serviceCmd.Start(); err != nil {
-			gracefulStop(running)
-			state.Services[svc.Name] = config.ServiceState{PID: 0, Status: "failed"}
-			markStopped(&state, running)
-			_ = config.SaveRuntimeState(rootPath, state)
-			send(startServiceUpdateMsg{Name: svc.Name, Status: statusFailed, Detail: "start failed"})
-			send(startFailedMsg{Message: serviceFailureMessage(svc.Name, "start failed", conciseError(err))})
-			return
-		}
-
-		serviceWaitCh := make(chan error, 1)
-		go func(cmd *exec.Cmd, waitCh chan<- error) {
-			waitCh <- cmd.Wait()
-		}(serviceCmd, serviceWaitCh)
-
-		if err := waitForServiceReady(ctx, svc.Port, serviceWaitCh, 20*time.Second); err != nil {
-			gracefulStop(append(running, runningService{name: svc.Name, cmd: serviceCmd, tail: serviceTail}))
-			state.Services[svc.Name] = config.ServiceState{PID: 0, Status: "failed"}
-			markStopped(&state, running)
-			_ = config.SaveRuntimeState(rootPath, state)
-			detail := serviceTail.LastLine()
-			if detail == "" {
-				detail = conciseError(err)
+			if cancelled {
+				continue
 			}
-			send(startServiceUpdateMsg{Name: svc.Name, Status: statusFailed, Detail: "not ready"})
-			send(startFailedMsg{Message: serviceFailureMessage(svc.Name, "not ready", detail)})
+
+			if result.err != nil {
+				if result.cancelled {
+					continue
+				}
+
+				if startupErr == nil {
+					startupErr = &startupFailure{name: result.name, reason: result.reason, detail: result.detail}
+					state.Services[result.name] = config.ServiceState{PID: 0, Status: "failed"}
+					send(startServiceUpdateMsg{Name: result.name, Status: statusFailed, Detail: result.reason})
+					startCancel()
+				}
+				continue
+			}
+
+			if cancelled || startupErr != nil {
+				continue
+			}
+
+			readyWaiters[result.name] = result.waitCh
+			state.Services[result.name] = config.ServiceState{PID: result.service.cmd.Process.Pid, Status: "running"}
+			if err := config.SaveRuntimeState(rootPath, state); err != nil {
+				startupErr = &startupFailure{message: "could not save runtime state"}
+				startCancel()
+				continue
+			}
+
+			detail := fmt.Sprintf("running on http://localhost:%d", result.port)
+			send(startServiceUpdateMsg{Name: result.name, Status: statusRunning, Detail: detail})
+		}
+	}
+
+	if cancelled {
+		for _, rs := range running {
+			send(startServiceUpdateMsg{Name: rs.name, Status: statusStopping, Detail: "stopping"})
+		}
+		gracefulStop(running)
+		markStopped(&state, running)
+		_ = config.SaveRuntimeState(rootPath, state)
+		send(startStoppedMsg{})
+		return
+	}
+
+	if startupErr != nil {
+		gracefulStop(running)
+		markStopped(&state, running)
+		_ = config.SaveRuntimeState(rootPath, state)
+
+		if startupErr.message != "" {
+			send(startFailedMsg{Message: startupErr.message})
 			return
 		}
 
-		running = append(running, runningService{name: svc.Name, cmd: serviceCmd, tail: serviceTail})
-		state.Services[svc.Name] = config.ServiceState{PID: serviceCmd.Process.Pid, Status: "running"}
-		if err := config.SaveRuntimeState(rootPath, state); err != nil {
-			gracefulStop(running)
-			markStopped(&state, running)
-			_ = config.SaveRuntimeState(rootPath, state)
-			send(startFailedMsg{Message: "could not save runtime state"})
-			return
-		}
+		send(startFailedMsg{Message: serviceFailureMessage(startupErr.name, startupErr.reason, startupErr.detail)})
+		return
+	}
 
-		detail := fmt.Sprintf("running on http://localhost:%d", svc.Port)
-		send(startServiceUpdateMsg{Name: svc.Name, Status: statusRunning, Detail: detail})
+	exitCh := make(chan serviceExit, len(running))
+	for _, rs := range running {
+		waitCh, ok := readyWaiters[rs.name]
+		if !ok || waitCh == nil {
+			continue
+		}
 
 		go func(name string, waitCh <-chan error) {
 			exitCh <- serviceExit{name: name, err: <-waitCh}
-		}(svc.Name, serviceWaitCh)
+		}(rs.name, waitCh)
 	}
 
 	send(startFooterMsg{Text: "Press Ctrl+C to stop running."})
@@ -424,6 +440,103 @@ func runStartWorkflow(ctx context.Context, rootPath string, send func(msg tea.Ms
 		send(startFailedMsg{Message: serviceFailureMessage(exited.name, "exited unexpectedly", failureDetail)})
 		return
 	}
+}
+
+func startService(ctx context.Context, rootPath string, svc config.ServiceConfig, send func(msg tea.Msg)) serviceStartResult {
+	result := serviceStartResult{
+		name: svc.Name,
+		port: svc.Port,
+	}
+
+	svcDir := filepath.Join(rootPath, svc.CWD)
+	if _, err := os.Stat(svcDir); err != nil {
+		result.err = err
+		result.reason = "folder missing"
+		return result
+	}
+
+	installed, err := installDependenciesIfNeeded(ctx, svcDir)
+	if err != nil {
+		result.err = err
+		if ctx.Err() != nil {
+			result.cancelled = true
+			return result
+		}
+
+		result.reason = "install failed"
+		result.detail = conciseError(err)
+		return result
+	}
+
+	if installed {
+		send(startServiceUpdateMsg{Name: svc.Name, Status: statusInstalling, Detail: "dependencies installed"})
+	} else {
+		send(startServiceUpdateMsg{Name: svc.Name, Status: statusInstalling, Detail: "dependencies ready"})
+	}
+
+	if ctx.Err() != nil {
+		result.err = ctx.Err()
+		result.cancelled = true
+		return result
+	}
+
+	send(startServiceUpdateMsg{Name: svc.Name, Status: statusStarting, Detail: "starting"})
+
+	serviceTail := newLineTail(10)
+	serviceCmd := serviceCommand(ctx, svc.Run)
+	serviceCmd.Dir = svcDir
+	serviceCmd.Stdout = serviceTail
+	serviceCmd.Stderr = serviceTail
+	serviceCmd.Env = os.Environ()
+
+	if svc.EnvFile != "" {
+		envPath := filepath.Join(rootPath, svc.EnvFile)
+		envMap, err := config.LoadEnvFile(envPath)
+		if err != nil {
+			result.err = err
+			result.reason = "env file invalid"
+			result.detail = conciseError(err)
+			return result
+		}
+		serviceCmd.Env = append(serviceCmd.Env, envPairs(envMap)...)
+	}
+
+	if err := serviceCmd.Start(); err != nil {
+		result.err = err
+		if ctx.Err() != nil {
+			result.cancelled = true
+			return result
+		}
+
+		result.reason = "start failed"
+		result.detail = conciseError(err)
+		return result
+	}
+
+	result.service = runningService{name: svc.Name, cmd: serviceCmd, tail: serviceTail}
+
+	serviceWaitCh := make(chan error, 1)
+	go func(cmd *exec.Cmd, waitCh chan<- error) {
+		waitCh <- cmd.Wait()
+	}(serviceCmd, serviceWaitCh)
+
+	if err := waitForServiceReady(ctx, svc.Port, serviceWaitCh, 20*time.Second); err != nil {
+		result.err = err
+		if ctx.Err() != nil {
+			result.cancelled = true
+			return result
+		}
+
+		result.reason = "not ready"
+		result.detail = serviceTail.LastLine()
+		if result.detail == "" {
+			result.detail = conciseError(err)
+		}
+		return result
+	}
+
+	result.waitCh = serviceWaitCh
+	return result
 }
 
 func installDependenciesIfNeeded(ctx context.Context, serviceDir string) (bool, error) {
@@ -510,12 +623,12 @@ func findRunningService(services []runningService, name string) (runningService,
 	return runningService{}, false
 }
 
-func serviceCommand(command string) *exec.Cmd {
+func serviceCommand(ctx context.Context, command string) *exec.Cmd {
 	if runtime.GOOS == "windows" {
-		return exec.Command("cmd", "/C", command)
+		return exec.CommandContext(ctx, "cmd", "/C", command)
 	}
 
-	return exec.Command("sh", "-c", command)
+	return exec.CommandContext(ctx, "sh", "-c", command)
 }
 
 func gracefulStop(services []runningService) {
