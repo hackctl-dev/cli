@@ -89,7 +89,7 @@ Current behavior:
 - copies the selected template subdirectory into the target path
 - validates `hackctl.config.json` service and share settings before continuing
 - enforces npm-based run commands for official templates
-- scaffolds the template's `deploy` block, currently `runtime: pm2` and `mode: dev`
+- scaffolds the template's `deploy` block, currently `runtime: PM2` and `mode: dev`
 - expects templates to ignore `.hackctl/` in `.gitignore`
 - installs Node dependencies for detected services
 - fails if the target directory already exists
@@ -146,7 +146,7 @@ Current behavior:
 
 - must be run inside a hackctl project
 - requires `deploy.runtime` in `hackctl.config.json`
-- currently supports `deploy.runtime: pm2` only
+- currently supports `deploy.runtime: PM2` only
 - currently supports `deploy.mode: dev` only
 - requires local `ssh` and `scp`
 - currently targets Ubuntu or Debian VPS hosts with `root` or `sudo`
