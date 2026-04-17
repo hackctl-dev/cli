@@ -9,8 +9,9 @@ The current shipped commands are:
 - `hackctl create`
 - `hackctl start`
 - `hackctl share`
-
-Do not describe roadmap commands like `deploy`, `status`, or `destroy` as implemented unless you add them.
+- `hackctl deploy`
+- `hackctl status`
+- `hackctl destroy`
 
 ## Code Areas
 
