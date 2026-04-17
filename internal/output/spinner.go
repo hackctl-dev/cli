@@ -33,7 +33,7 @@ func RunStep(title string, action func() error) error {
 		doneCh:  doneCh,
 	}
 
-	finalModel, err := tea.NewProgram(model, tea.WithoutSignalHandler()).Run()
+	finalModel, err := tea.NewProgram(model, tea.WithoutSignalHandler(), tea.WithInput(nil)).Run()
 	if err != nil {
 		return err
 	}
@@ -141,7 +141,7 @@ func RunSteps(title string, action func(addStep func(string) int, completeStep f
 		events:    events,
 	}
 
-	finalModel, err := tea.NewProgram(model, tea.WithoutSignalHandler()).Run()
+	finalModel, err := tea.NewProgram(model, tea.WithoutSignalHandler(), tea.WithInput(nil)).Run()
 	if err != nil {
 		return err
 	}

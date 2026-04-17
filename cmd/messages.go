@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-const maxErrorDetailLen = 140
+const maxErrorDetailLen = 100
 
 func conciseText(input string) string {
 	trimmed := strings.TrimSpace(input)

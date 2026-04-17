@@ -183,33 +183,6 @@ func init() {
 	rootCmd.AddCommand(shareCmd)
 }
 
-func resolveSharePort(cfg config.ProjectConfig) (int, error) {
-	serviceName := cfg.Share.DefaultService
-	if serviceName == "" {
-		serviceName = "frontend"
-	}
-
-	for _, svc := range cfg.Services {
-		if svc.Name == serviceName && svc.Port > 0 {
-			return svc.Port, nil
-		}
-	}
-
-	if cfg.Share.DefaultPort > 0 {
-		return cfg.Share.DefaultPort, nil
-	}
-
-	if serviceName != "frontend" {
-		for _, svc := range cfg.Services {
-			if svc.Name == "frontend" && svc.Port > 0 {
-				return svc.Port, nil
-			}
-		}
-	}
-
-	return 0, errors.New("frontend share port is missing in hackctl.config.json")
-}
-
 func waitForPublicURL(urlCh <-chan string, waitCh <-chan error) (string, error) {
 	timer := time.NewTimer(20 * time.Second)
 	defer timer.Stop()

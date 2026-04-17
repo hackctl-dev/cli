@@ -18,12 +18,24 @@ type ProjectConfig struct {
 	Template string          `json:"template"`
 	Services []ServiceConfig `json:"services"`
 	Share    ShareConfig     `json:"share"`
+	Deploy   *DeployConfig   `json:"deploy,omitempty"`
 }
 
 type ShareConfig struct {
 	DefaultService string `json:"defaultService"`
 	DefaultPort    int    `json:"defaultPort"`
 }
+
+type DeployConfig struct {
+	Runtime string `json:"runtime"`
+	Mode    string `json:"mode,omitempty"`
+}
+
+const (
+	DeployRuntimePM2 = "pm2"
+	DeployModeDev    = "dev"
+	DeployModeProd   = "prod"
+)
 
 type ServiceConfig struct {
 	Name    string `json:"name"`
@@ -126,7 +138,53 @@ func validateProjectConfig(rootPath string, cfg ProjectConfig) error {
 		}
 	}
 
+	if cfg.Deploy != nil {
+		deploy := normalizedDeployConfig(cfg.Deploy)
+		if deploy.Runtime == "" {
+			return errors.New("deploy.runtime required when deploy is configured")
+		}
+	}
+
 	return nil
+}
+
+func ValidateDeployConfig(cfg ProjectConfig) (DeployConfig, error) {
+	if cfg.Deploy == nil {
+		return DeployConfig{}, errors.New("deploy.runtime required in hackctl.config.json")
+	}
+
+	deploy := normalizedDeployConfig(cfg.Deploy)
+	if deploy.Runtime == "" {
+		return DeployConfig{}, errors.New("deploy.runtime required in hackctl.config.json")
+	}
+
+	if deploy.Mode == "" {
+		deploy.Mode = DeployModeDev
+	}
+
+	if deploy.Runtime != DeployRuntimePM2 {
+		return DeployConfig{}, fmt.Errorf("unsupported deploy.runtime %s", deploy.Runtime)
+	}
+
+	switch deploy.Mode {
+	case DeployModeDev:
+		return deploy, nil
+	case DeployModeProd:
+		return DeployConfig{}, fmt.Errorf("deploy.mode %s is not supported yet", deploy.Mode)
+	default:
+		return DeployConfig{}, fmt.Errorf("unsupported deploy.mode %s", deploy.Mode)
+	}
+}
+
+func normalizedDeployConfig(cfg *DeployConfig) DeployConfig {
+	if cfg == nil {
+		return DeployConfig{}
+	}
+
+	return DeployConfig{
+		Runtime: strings.ToLower(strings.TrimSpace(cfg.Runtime)),
+		Mode:    strings.ToLower(strings.TrimSpace(cfg.Mode)),
+	}
 }
 
 func resolveProjectPath(rootPath string, value string) (string, error) {

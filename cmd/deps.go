@@ -34,6 +34,16 @@ var (
 		url:      nodeDownloadURL,
 		minMajor: 10,
 	}
+	depSSH = requiredDependency{
+		name:     "ssh",
+		url:      "https://www.openssh.com/portable.html",
+		minMajor: 0,
+	}
+	depSCP = requiredDependency{
+		name:     "scp",
+		url:      "https://www.openssh.com/portable.html",
+		minMajor: 0,
+	}
 )
 
 func ensureDependencies(deps ...requiredDependency) error {
