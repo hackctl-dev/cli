@@ -9,7 +9,7 @@ import (
 func loadRequiredDeployState(rootPath string) (config.DeployState, error) {
 	state, err := config.LoadDeployState(rootPath)
 	if errors.Is(err, config.ErrDeployStateNotFound) {
-		return config.DeployState{}, errors.New("no services are deployed")
+		return config.DeployState{}, errors.New("No services are deployed")
 	}
 
 	return state, err
