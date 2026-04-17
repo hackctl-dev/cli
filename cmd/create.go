@@ -69,7 +69,7 @@ var createCmd = &cobra.Command{
 			}
 
 			for _, target := range installTargets {
-				stepID = addStep(fmt.Sprintf("Installing %s dependencies", target.name))
+				stepID = addStep(fmt.Sprintf("Installing %s dependencies", strings.TrimSpace(target.name)))
 				if err := installDependencies(target); err != nil {
 					return err
 				}
