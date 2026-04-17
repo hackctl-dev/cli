@@ -19,18 +19,21 @@ var destroyCmd = &cobra.Command{
 			return err
 		}
 
-		state, err := loadRequiredDeployState(rootPath)
-		if err != nil {
-			return err
-		}
-
-		plan, err := deployPlanFromState(state)
-		if err != nil {
-			return err
-		}
+		var plan deployPlan
 
 		if err := output.RunSteps("Destroying deployment", func(addStep func(string) int, completeStep func(int)) error {
-			stepID := addStep("Validating saved deploy state")
+			stepID := addStep("Preparing cleanup")
+
+			state, err := loadRequiredDeployState(rootPath)
+			if err != nil {
+				return err
+			}
+
+			plan, err = deployPlanFromState(state)
+			if err != nil {
+				return err
+			}
+
 			if err := validateDeployKeyPath(plan.KeyPath); err != nil {
 				return err
 			}

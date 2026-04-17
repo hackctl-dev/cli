@@ -30,36 +30,39 @@ var deployCmd = &cobra.Command{
 			return err
 		}
 
-		projectConfig, err := config.LoadProjectConfig(rootPath)
-		if err != nil {
-			return err
-		}
-
-		deployConfig, err := config.ValidateDeployConfig(projectConfig)
-		if err != nil {
-			return err
-		}
-
-		target, keyPath, err := resolveDeployInputs(rootPath, deployTarget, deployKey)
-		if err != nil {
-			return err
-		}
-
-		publicService, publicPort, err := resolveShareTarget(projectConfig)
-		if err != nil {
-			return err
-		}
-
-		plan, err := newDeployPlan(projectConfig, deployConfig, target, keyPath, publicService, publicPort)
-		if err != nil {
-			return err
-		}
+		var plan deployPlan
 
 		publicURL := ""
 		tunnelPID := 0
 
 		if err := output.RunSteps("Deploying project", func(addStep func(string) int, completeStep func(int)) error {
-			stepID := addStep("Validating local prerequisites")
+			stepID := addStep("Preparing deployment")
+
+			projectConfig, err := config.LoadProjectConfig(rootPath)
+			if err != nil {
+				return err
+			}
+
+			deployConfig, err := config.ValidateDeployConfig(projectConfig)
+			if err != nil {
+				return err
+			}
+
+			target, keyPath, err := resolveDeployInputs(rootPath, deployTarget, deployKey)
+			if err != nil {
+				return err
+			}
+
+			publicService, publicPort, err := resolveShareTarget(projectConfig)
+			if err != nil {
+				return err
+			}
+
+			plan, err = newDeployPlan(projectConfig, deployConfig, target, keyPath, publicService, publicPort)
+			if err != nil {
+				return err
+			}
+
 			if err := ensureDependencies(depSSH, depSCP); err != nil {
 				return err
 			}
@@ -74,7 +77,7 @@ var deployCmd = &cobra.Command{
 			}
 			completeStep(stepID)
 
-			stepID = addStep("Provisioning pm2 runtime")
+			stepID = addStep("Setting up PM2 runtime")
 			if err := provisionRemoteRuntime(plan); err != nil {
 				return err
 			}
@@ -104,7 +107,7 @@ var deployCmd = &cobra.Command{
 			}
 			completeStep(stepID)
 
-			stepID = addStep("Creating Cloudflare tunnel")
+			stepID = addStep("Creating public URL")
 			url, pid, err := startRemoteTunnel(plan)
 			if err != nil {
 				return err
@@ -138,6 +141,7 @@ var deployCmd = &cobra.Command{
 		}
 
 		fmt.Println("Project successfully deployed")
+		fmt.Println()
 		fmt.Println(output.Field("Live URL", output.URL(publicURL)))
 		fmt.Println()
 		fmt.Println(output.Footer("Run hackctl status to view deploy details"))
